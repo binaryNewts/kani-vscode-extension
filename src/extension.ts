@@ -186,18 +186,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			const selection = editor.selection;
 
 			const implLine = document.getText(selection);
-			const regexpFrom = /impl(.*) From<(.*)> for (.*) {/;
+			const regexpFrom = /impl(.*) From<(.*)> for (.*)/;
 			const match = implLine.match(regexpFrom);
 			if (!match) {
 				showErrorWithReportIssueButton(
-					'regex was unable to match'
+					'From implementation not recognized. Make sure to select entire implementation line.'
 				);
 				return;
 			}
-			const kaniTest = `#[kani::proof]
+			const toType = match[3].replace("{", "").replace("<", "::<").trim();
+			const kaniTest = `// if using a user defined type, Abritrary implementation may be necessary
+// if implementation requires a polymorphic type, please manually implement with a specific type
+#[kani::proof]
 fn from_test() {
-    let t : ${match[2]} = kani::any();
-    let _ = ${match[3]}::from(t);
+    let t: ${match[2]} = kani::any();
+    let _ = ${toType}::from(t);
 }\n`;
 			editor.edit(editBuilder => {
 				editBuilder.insert(selection.anchor, kaniTest);
