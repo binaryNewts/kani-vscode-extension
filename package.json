@@ -44,6 +44,12 @@
         "title": "Run Cargo Kani"
       },
       {
+        "command": "Kani.addFromTest",
+        "when": "editorLangId == rust",
+        "category": "Kani",
+        "title": "addFromTest"
+      },
+      {
         "title": "Enable CodeLens",
         "command": "codelens-kani.enableCodeLens",
         "category": "CodeLens Sample"

@@ -176,6 +176,35 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		showInformationMessage('Kani.runcargoKani');
 	});
 
+	// Add harness for From trait
+	const addFromTest = vscode.commands.registerCommand('Kani.addFromTest', function() {
+		// Get the active text editor
+		const editor = vscode.window.activeTextEditor;
+
+		if (editor) {
+			const document = editor.document;
+			const selection = editor.selection;
+
+			const implLine = document.getText(selection);
+			const regexpFrom = /impl(.*) From<(.*)> for (.*) {/;
+			const match = implLine.match(regexpFrom);
+			if (!match) {
+				showErrorWithReportIssueButton(
+					'regex was unable to match'
+				);
+				return;
+			}
+			const kaniTest = `#[kani::proof]
+fn from_test() {
+    let t : ${match[2]} = kani::any();
+    let _ = ${match[3]}::from(t);
+}\n`;
+			editor.edit(editBuilder => {
+				editBuilder.insert(selection.anchor, kaniTest);
+			});
+		}
+	});
+
 	// Register the run viewer report command
 	const runningViewerReport = vscode.commands.registerCommand(
 		'Kani.runViewerReport',
@@ -243,6 +272,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 	context.subscriptions.push(runKani);
 	context.subscriptions.push(runcargoKani);
+	context.subscriptions.push(addFromTest);
 	context.subscriptions.push(runningViewerReport);
 	context.subscriptions.push(runningConcretePlayback);
 	context.subscriptions.push(providerDisposable);
