@@ -195,10 +195,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				return;
 			}
 			const toType = match[3].replace("{", "").replace("<", "::<").trim();
+			const funcName = "from_" + match[2].replace(/[^a-z0-9]/gi, '').toLowerCase() + "_" + toType.replace(/[^a-z0-9]/gi, '').toLowerCase();
 			const kaniTest = `// if using a user defined type, Abritrary implementation may be necessary
 // if implementation requires a polymorphic type, please manually implement with a specific type
 #[kani::proof]
-fn from_test() {
+fn ${funcName}() {
     let t: ${match[2]} = kani::any();
     let _ = ${toType}::from(t);
 }\n`;

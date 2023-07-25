@@ -47,7 +47,7 @@
         "command": "Kani.addFromTest",
         "when": "editorLangId == rust",
         "category": "Kani",
-        "title": "addFromTest"
+        "title": "Add From Test"
       },
       {
         "title": "Enable CodeLens",
