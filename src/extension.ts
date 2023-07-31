@@ -176,8 +176,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		showInformationMessage('Kani.runcargoKani');
 	});
 
-	// Add harness for From trait
-	const addFromTest = vscode.commands.registerCommand('Kani.addFromTest', function() {
+	// Add harness for traits
+	const addTraitTest = vscode.commands.registerCommand('Kani.addTraitTest', function() {
 		// Get the active text editor
 		const editor = vscode.window.activeTextEditor;
 
@@ -185,24 +185,52 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 			const document = editor.document;
 			const selection = editor.selection;
 
-			const implLine = document.getText(selection);
-			const regexpFrom = /impl(.*) From<(.*)> for (.*)/;
-			const match = implLine.match(regexpFrom);
+			const implLine = document.getText(selection).replace('{', '').trim();
+			const regexp = /impl(?:<.*>|) (.*) for (.*)/;
+			const match = implLine.match(regexp);
 			if (!match) {
 				showErrorWithReportIssueButton(
-					'From implementation not recognized. Make sure to select entire implementation line.'
+					'Trait implementation not recognized. Make sure to select entire implementation line.'
 				);
 				return;
 			}
-			const toType = match[3].replace("{", "").replace("<", "::<").trim();
-			const funcName = "from_" + match[2].replace(/[^a-z0-9]/gi, '').toLowerCase() + "_" + toType.replace(/[^a-z0-9]/gi, '').toLowerCase();
-			const kaniTest = `// if using a user defined type, Abritrary implementation may be necessary
-// if implementation requires a polymorphic type, please manually implement with a specific type
-#[kani::proof]
-fn ${funcName}() {
-    let t: ${match[2]} = kani::any();
-    let _ = ${toType}::from(t);
-}\n`;
+			const regexpFrom = /From<(.*)>/;
+			const regexpPartialEq = /PartialEq(.*)/;
+			const matchFrom = match[1].match(regexpFrom);
+			const matchPartialEq = match[1].match(regexpPartialEq);
+
+			let funcName: string, vars: string, tests: string;
+			funcName = vars = tests = '';
+			if (matchFrom) {
+				const toType = match[2].replace('<', '::<');
+				funcName = `from_${matchFrom[1].replace(/[^a-z0-9]/gi, '').toLowerCase()}_${toType.replace(/[^a-z0-9]/gi, '').toLowerCase()}`;
+				vars = `\tlet t: ${matchFrom[1]} = kani::any();`
+				tests = `\tlet _ = ${toType}::from(t); // From conversion should not crash`;
+			} else if (matchPartialEq) {
+				if (matchPartialEq[1]) {
+					const t = matchPartialEq[1].replace('<', '').replace('>', '');
+					funcName = `partialeq_${t.replace(/[^a-z0-9]/gi, '').toLowerCase()}_${match[2].replace(/[^a-z0-9]/gi, '').toLowerCase()}`;
+					vars = `\tlet a1: ${match[2]} = kani::any();\n\tlet a2: ${match[2]} = kani::any();\n\tlet a3: ${match[2]} = kani::any();\n\tlet b1: ${t} = kani::any();\n\tlet b2: ${t} = kani::any();`;
+					tests = `\tif a1 == a2 { assert!(a2 == a1); } // symmetry\n\tif (a1 == a2) && (a2 == a3) { assert!(a1 == a3); } // transitivity\n\tif a1 != a2 { assert!(!(a1 == a2)); } // ne eq consistency\n\tif !(a1 == a2) { assert!(a1 != a2); } // eq ne consistency
+\tif (a1 == b1) && (b1 == a2) { assert!(a1 == a2); } // transitivity and symmetry between types\n\tif (a1 == a2) && (a2 == b1) { assert!(a1 == b1); } // transitivity between types\n\tif (a1 == b1) && (b1 == b2) { assert!(a1 == b2); } // transitivity between types
+\tif a1 != b1 { assert!(!(a1 == b1)); } // ne eq consistency between types\n\tif !(a1 == b1) { assert!(a1 != b1); } // eq ne consistency between types`;
+				} else {
+					funcName = `partialeq_${match[2].replace(/[^a-z0-9]/gi, '').toLowerCase()}`;
+					vars = `\tlet a: ${match[2]} = kani::any();\n\tlet b: ${match[2]} = kani::any();\n\tlet c: ${match[2]} = kani::any();`;
+					tests = `\tif a == b { assert!(b == a); } // symmetry\n\tif (a == b) && (b == c) { assert!(a == c); } // transitivity\n\tif a != b { assert!(!(a == b)); } // ne eq consistency\n\tif !(a == b) { assert!(a != b); } // eq ne consistency`;
+				}
+			} else {
+				showErrorWithReportIssueButton(
+					'Implementation only works for From and PartialEq.'
+				);
+				return;
+			}
+			
+			vscode.window.showInformationMessage(
+				`You may need to implement Arbitrary (kani::any()). If your implementation requires a polymorphic type, please manually fill this in with a specific type instead.`,
+			);
+			const body = `${vars}\n${tests}`;
+			const kaniTest = `#[kani::proof]\nfn ${funcName}() {\n${body}\n}\n`;
 			editor.edit(editBuilder => {
 				editBuilder.insert(selection.anchor, kaniTest);
 			});
@@ -276,7 +304,7 @@ fn ${funcName}() {
 
 	context.subscriptions.push(runKani);
 	context.subscriptions.push(runcargoKani);
-	context.subscriptions.push(addFromTest);
+	context.subscriptions.push(addTraitTest);
 	context.subscriptions.push(runningViewerReport);
 	context.subscriptions.push(runningConcretePlayback);
 	context.subscriptions.push(providerDisposable);

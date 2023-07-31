@@ -44,10 +44,10 @@
         "title": "Run Cargo Kani"
       },
       {
-        "command": "Kani.addFromTest",
+        "command": "Kani.addTraitTest",
         "when": "editorLangId == rust",
         "category": "Kani",
-        "title": "Add From Test"
+        "title": "Add Trait Test"
       },
       {
         "title": "Enable CodeLens",
