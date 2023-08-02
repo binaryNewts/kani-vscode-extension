@@ -194,10 +194,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				);
 				return;
 			}
-			const regexpFrom = /From<(.*)>/;
-			const regexpPartialEq = /PartialEq(.*)/;
-			const matchFrom = match[1].match(regexpFrom);
-			const matchPartialEq = match[1].match(regexpPartialEq);
+			const matchFrom = match[1].match(/From<(.*)>/);
+			const matchPartialEq = match[1].match(/PartialEq(<.*>|)/);
+			const matchPartialOrd = match[1].match(/PartialOrd(<.*>|)/);
 
 			let funcName: string, vars: string, tests: string;
 			funcName = vars = tests = '';
@@ -206,11 +205,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 				funcName = `from_${matchFrom[1].replace(/[^a-z0-9]/gi, '').toLowerCase()}_${toType.replace(/[^a-z0-9]/gi, '').toLowerCase()}`;
 				vars = `\tlet t: ${matchFrom[1]} = kani::any();`
 				tests = `\tlet _ = ${toType}::from(t); // From conversion should not crash`;
+			} else if (match[1] === 'Eq') {
+				funcName = `eq_${match[2].replace(/[^a-z0-9]/gi, '').toLowerCase()}`;
+				vars = `\tlet a: ${match[2]} = kani::any();\n\tlet b: ${match[2]} = kani::any();\n\tlet c: ${match[2]} = kani::any();`;
+				tests = `\tassert!(a == a); // reflexivity\n\tif a == b { assert!(b == a); } // symmetry\n\tif (a == b) && (b == c) { assert!(a == c); } // transitivity\n\tif a != b { assert!(!(a == b)); } // ne eq consistency\n\tif !(a == b) { assert!(a != b); } // eq ne consistency\n\tassert!((a == b) || (a != b)) // totality`;
+			} else if (match[1] === 'Ord') {
+				funcName = `ord_${match[2].replace(/[^a-z0-9]/gi, '').toLowerCase()}`;
+				vars = `\tlet a: ${match[2]} = kani::any();\n\tlet b: ${match[2]} = kani::any();\n\tlet c: ${match[2]} = kani::any();`;
+				tests = `\tassert!(a.partial_cmp(&b) == Some(a.cmp(&b)));\n\tassert!(a.max(b) == core::cmp::max_by(a, b, core::cmp::Ord::cmp));\n\tassert!(a.min(b) == core::cmp::min_by(a, b, core::cmp::Ord::cmp));
+\tkani::assume(b < c);\n\tif a > c { assert!(a.clamp(b, c) == c); }\n\tif a < b { assert!(a.clamp(b, c) == b); }\n\tif (b < a) && (a < c) { assert!(a.clamp(b, c) == a); }`;
 			} else if (matchPartialEq) {
 				if (matchPartialEq[1]) {
-					const t = matchPartialEq[1].replace('<', '').replace('>', '');
-					funcName = `partialeq_${t.replace(/[^a-z0-9]/gi, '').toLowerCase()}_${match[2].replace(/[^a-z0-9]/gi, '').toLowerCase()}`;
-					vars = `\tlet a1: ${match[2]} = kani::any();\n\tlet a2: ${match[2]} = kani::any();\n\tlet a3: ${match[2]} = kani::any();\n\tlet b1: ${t} = kani::any();\n\tlet b2: ${t} = kani::any();`;
+					funcName = `partialeq_${matchPartialEq[1].replace(/[^a-z0-9]/gi, '').toLowerCase()}_${match[2].replace(/[^a-z0-9]/gi, '').toLowerCase()}`;
+					vars = `\tlet a1: ${match[2]} = kani::any();\n\tlet a2: ${match[2]} = kani::any();\n\tlet a3: ${match[2]} = kani::any();\n\tlet b1: ${matchPartialEq[1]} = kani::any();\n\tlet b2: ${matchPartialEq[1]} = kani::any();`;
 					tests = `\tif a1 == a2 { assert!(a2 == a1); } // symmetry\n\tif (a1 == a2) && (a2 == a3) { assert!(a1 == a3); } // transitivity\n\tif a1 != a2 { assert!(!(a1 == a2)); } // ne eq consistency\n\tif !(a1 == a2) { assert!(a1 != a2); } // eq ne consistency
 \tif (a1 == b1) && (b1 == a2) { assert!(a1 == a2); } // transitivity and symmetry between types\n\tif (a1 == a2) && (a2 == b1) { assert!(a1 == b1); } // transitivity between types\n\tif (a1 == b1) && (b1 == b2) { assert!(a1 == b2); } // transitivity between types
 \tif a1 != b1 { assert!(!(a1 == b1)); } // ne eq consistency between types\n\tif !(a1 == b1) { assert!(a1 != b1); } // eq ne consistency between types`;
@@ -219,9 +226,36 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 					vars = `\tlet a: ${match[2]} = kani::any();\n\tlet b: ${match[2]} = kani::any();\n\tlet c: ${match[2]} = kani::any();`;
 					tests = `\tif a == b { assert!(b == a); } // symmetry\n\tif (a == b) && (b == c) { assert!(a == c); } // transitivity\n\tif a != b { assert!(!(a == b)); } // ne eq consistency\n\tif !(a == b) { assert!(a != b); } // eq ne consistency`;
 				}
+			} else if (matchPartialOrd) {
+				if (matchPartialOrd[1]) {
+					funcName = `partialord_${matchPartialOrd[1].replace(/[^a-z0-9]/gi, '').toLowerCase()}_${match[2].replace(/[^a-z0-9]/gi, '').toLowerCase()}`;
+					vars = `\tlet a1: ${match[2]} = kani::any();\n\tlet a2: ${match[2]} = kani::any();\n\tlet a3: ${match[2]} = kani::any();\n\tlet b1: ${matchPartialOrd[1]} = kani::any();\n\tlet b2: ${matchPartialOrd[1]} = kani::any();`;
+					tests = `\tif a1 == b1 { assert!(partial_cmp(a1, b1) == Some(core::cmp::Ordering::Equal)); } // eq consistency\n\tif partial_cmp(a1, b1) == Some(core::cmp::Ordering::Equal) { assert!(a1 == b1); } // eq consistency
+\tif a1 < b1 { assert!(partial_cmp(a1, b1) == Some(core::cmp::Ordering::Less)); } // lt consistency\n\tif partial_cmp(a1, b1) == Some(core::cmp::Ordering::Less) { assert!(a1 < b1); } // lt consistency
+\tif a1 > b1 { assert!(partial_cmp(a1, b1) == Some(core::cmp::Ordering::Greater)); } // gt consistency\n\tif partial_cmp(a1, b1) == Some(core::cmp::Ordering::Greater) { assert!(a1 > b1); } // gt consistency
+\tif a1 <= b1 { assert!(a1 < b1 || a1 == b1); } // le consistency\n\tif (a1 < b1) || (a1 == b1) { assert!(a1 <= b1); } // le consistency
+\tif a1 >= b1 { assert!(a1 > b1 || a1 == b1); } // ge consistency\n\tif (a1 > b1) || (a1 == b1) { assert!(a1 >= b1); } // ge consistency
+\tif a1 != b1 { assert!(!(a1 == b1)); } // ne eq consistency\n\tif !(a1 == b1) { assert!(a1 != b1); } // eq ne consistency
+\tif (a1 == a2) && (a2 == b1) { assert!(a1 == b1); } // transitivity\n\tif (a1 < a2) && (a2 < b1) { assert!(a1 < b1); } // transitivity\n\tif (a1 > a2) && (a2 > b1) { assert!(a1 > b1); } // transitivity
+\tif (a1 == a2) && (a2 == a3) { assert!(a1 == a3); } // transitivity\n\tif (a1 < a2) && (a2 < a3) { assert!(a1 < a3); } // transitivity\n\tif (a1 > a2) && (a2 > a3) { assert!(a1 > a3); } // transitivity
+\tif (a1 == b1) && (b1 == a2) { assert!(a1 == a2); } // transitivity\n\tif (a1 < b1) && (b1 < a2) { assert!(a1 < a2); } // transitivity\n\tif (a1 > b1) && (b1 > a2) { assert!(a1 > a2); } // transitivity
+\tif (a1 == b1) && (b1 == b2) { assert!(a1 == b2); } // transitivity\n\tif (a1 < b1) && (b1 < b2) { assert!(a1 < b2); } // transitivity\n\tif (a1 > b1) && (b1 > b2) { assert!(a1 > b2); } // transitivity
+\tif a1 < b1 { assert!(b1 > a1); } // duality\n\tif b1 > a1 { assert!(a1 < b1); } // duality`;
+				} else {
+					funcName = `partialord_${match[2].replace(/[^a-z0-9]/gi, '').toLowerCase()}`;
+					vars = `\tlet a: ${match[2]} = kani::any();\n\tlet b: ${match[2]} = kani::any();\n\tlet c: ${match[2]} = kani::any();`;
+					tests = `\tif a == b { assert!(a.partial_cmp(&b) == Some(core::cmp::Ordering::Equal)); } // eq consistency\n\tif a.partial_cmp(&b) == Some(core::cmp::Ordering::Equal) { assert!(a == b); } // eq consistency
+\tif a < b { assert!(a.partial_cmp(&b) == Some(core::cmp::Ordering::Less)); } // lt consistency\n\tif a.partial_cmp(&b) == Some(core::cmp::Ordering::Less) { assert!(a < b); } // lt consistency
+\tif a > b { assert!(a.partial_cmp(&b) == Some(core::cmp::Ordering::Greater)); } // gt consistency\n\tif a.partial_cmp(&b) == Some(core::cmp::Ordering::Greater) { assert!(a > b); } // gt consistency
+\tif a <= b { assert!(a < b || a == b); } // le consistency\n\tif (a < b) || (a == b) { assert!(a <= b); } // le consistency
+\tif a >= b { assert!(a > b || a == b); } // ge consistency\n\tif (a > b) || (a == b) { assert!(a >= b); } // ge consistency
+\tif a != b { assert!(!(a == b)); } // ne eq consistency\n\tif !(a == b) { assert!(a != b); } // eq ne consistency
+\tif (a == b) && (b == c) { assert!(a == c); } // transitivity\n\tif (a < b) && (b < c) { assert!(a < c); } // transitivity\n\tif (a > b) && (b > c) { assert!(a > c); } // transitivity
+\tif a < b { assert!(b > a); } // duality\n\tif b > a { assert!(a < b); } // duality`;
+				}
 			} else {
 				showErrorWithReportIssueButton(
-					'Implementation only works for From and PartialEq.'
+					'Harness synthesis only implemented for From, Eq, Ord, PartialEq, PartialOrd.'
 				);
 				return;
 			}
